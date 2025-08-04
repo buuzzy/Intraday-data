@@ -1,8 +1,8 @@
-fastapi==0.109.2
-sse-starlette==3.0.2
-uvicorn==0.29.0
-supabase==2.17.0
-python-dotenv==1.0.1
-pydantic==2.7.2
-pytz==2024.1
+fastapi>=0.109.2,<0.111.0
+sse-starlette>=3.0.0,<4.0.0
+uvicorn>=0.29.0,<0.30.0
+supabase>=2.17.0,<3.0.0
+python-dotenv>=1.0.0,<2.0.0
+pydantic>=2.7.0,<3.0.0
+pytz>=2024.1
 mcp==1.7.1
