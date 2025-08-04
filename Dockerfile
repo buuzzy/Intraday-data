@@ -20,4 +20,4 @@ COPY . .
 EXPOSE 8080
 
 # 启动命令 - 优化配置以支持SSE连接
-CMD ["python", "stock_data_api.py"]
+CMD exec uvicorn server:app --host 0.0.0.0 --port $PORT
