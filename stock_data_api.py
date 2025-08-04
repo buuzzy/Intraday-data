@@ -218,50 +218,8 @@ async def get_bars_range(
 # 初始化MCP实例
 mcp = FastMCP("股票分时数据查询工具")
 
-# 定义MCP工具
-@mcp.tool(
-    name="stock_data_mcp_get_latest_bars",
-    description="查询特定股票在给定结束时间前推X条分时数据，支持15分钟、30分钟和60分钟K线"
-)
-def stock_data_mcp_get_latest_bars(
-    time_level: str,
-    stock_code: str,
-    end_time: Optional[str] = None,
-    limit: int = 10
-) -> str:
-    """查询特定股票在给定结束时间前推X条分时数据
-    
-    参数:
-        time_level: 时间级别，可选值为15min, 30min, 60min
-        stock_code: 股票代码，例如sz002353
-        end_time: 结束时间（可选），格式为YYYY-MM-DDTHH:MM:SS
-        limit: 返回的记录数量（可选），默认为10
-    """
-    # 这个函数将通过SSE事件生成器调用，不需要在这里实现具体逻辑
-    # 实际逻辑在stock_data_event_generator中处理
-    pass
-
-@mcp.tool(
-    name="stock_data_mcp_get_bars_range",
-    description="查询特定股票在给定时间区间内的分时数据，支持15分钟、30分钟和60分钟K线"
-)
-def stock_data_mcp_get_bars_range(
-    time_level: str,
-    stock_code: str,
-    start_time: str,
-    end_time: str
-) -> str:
-    """查询特定股票在给定时间区间内的分时数据
-    
-    参数:
-        time_level: 时间级别，可选值为15min, 30min, 60min
-        stock_code: 股票代码，例如sz002353
-        start_time: 开始时间，格式为YYYY-MM-DDTHH:MM:SS
-        end_time: 结束时间，格式为YYYY-MM-DDTHH:MM:SS
-    """
-    # 这个函数将通过SSE事件生成器调用，不需要在这里实现具体逻辑
-    # 实际逻辑在stock_data_event_generator中处理
-    pass
+# 挂载MCP到FastAPI应用
+mcp.mount_to_app(app, "/mcp")
 
 # 实现MCP工具的实际处理逻辑
 @mcp.tool("stock_data_mcp_get_latest_bars")
@@ -336,7 +294,7 @@ async def impl_stock_data_mcp_get_latest_bars(request: Request, params: Dict[str
             "request_id": str(request_id)
         })
 
-@mcp.tool_impl("stock_data_mcp_get_bars_range")
+@mcp.tool("stock_data_mcp_get_bars_range")
 async def impl_stock_data_mcp_get_bars_range(request: Request, params: Dict[str, Any]) -> AsyncGenerator[str, None]:
     request_id = id(request)
     client_host = request.client.host if request.client else "unknown"
