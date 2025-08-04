@@ -1,0 +1,8 @@
+fastapi==0.110.0
+sse-starlette==3.0.2
+uvicorn==0.29.0
+supabase==1.0.3
+python-dotenv==1.0.1
+pydantic==2.6.4
+pytz==2024.1
+sse-starlette==3.0.2

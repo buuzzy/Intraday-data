@@ -1,0 +1,24 @@
+# App Engine配置文件
+runtime: python312
+
+entrypoint: uvicorn stock_data_api:app --host=0.0.0.0 --port=$PORT
+
+env_variables:
+  # 设置环境变量
+  ENV: "production"
+  # 在部署时设置Supabase凭据
+  # SUPABASE_URL: "your-supabase-url"
+  # SUPABASE_KEY: "your-supabase-key"
+
+automatic_scaling:
+  min_instances: 0
+  max_instances: 10
+  target_cpu_utilization: 0.65
+
+handlers:
+  - url: /.*
+    script: auto
+    secure: always
+
+inbound_services:
+  - warmup

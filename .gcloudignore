@@ -1,0 +1,60 @@
+# .gcloudignore文件用于指定在部署到Google Cloud时要忽略的文件
+
+# 忽略git相关文件
+.git
+.gitignore
+
+# 忽略Python虚拟环境
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# 忽略本地开发文件
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# 忽略编辑器配置
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# 忽略日志
+*.log
+
+# 忽略测试文件
+test/
+tests/
+
+# 忽略文档（保留README.md和DEPLOY.md）
+docs/
+!README.md
+!DEPLOY.md
+
+# 忽略数据文件夹
+数据清洗/
+
+# 不忽略Dockerfile和cloudbuild.yaml
+!Dockerfile
+!cloudbuild.yaml
+!.dockerignore
