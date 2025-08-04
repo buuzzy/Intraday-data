@@ -264,7 +264,7 @@ def stock_data_mcp_get_bars_range(
     pass
 
 # 实现MCP工具的实际处理逻辑
-@mcp.tool_impl("stock_data_mcp_get_latest_bars")
+@mcp.tool("stock_data_mcp_get_latest_bars")
 async def impl_stock_data_mcp_get_latest_bars(request: Request, params: Dict[str, Any]) -> AsyncGenerator[str, None]:
     request_id = id(request)
     client_host = request.client.host if request.client else "unknown"
