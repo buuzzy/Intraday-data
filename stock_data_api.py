@@ -24,16 +24,26 @@ logger = logging.getLogger(__name__)
 
 # 加载环境变量
 load_dotenv()
+logger.info(".env 文件已尝试加载")
 
 # 初始化Supabase客户端
+logger.info("正在检查 Supabase 环境变量...")
 supabase_url = os.environ.get("SUPABASE_URL")
 supabase_key = os.environ.get("SUPABASE_KEY")
 
 if not supabase_url or not supabase_key:
-    raise ValueError("请在.env文件中设置SUPABASE_URL和SUPABASE_KEY")
+    logger.critical("错误: SUPABASE_URL 和/或 SUPABASE_KEY 环境变量未设置。应用将退出。")
+    sys.exit(1)
+else:
+    logger.info("Supabase 环境变量已找到。")
 
-# 直接初始化Supabase客户端，不使用额外选项
-supabase: Client = create_client(supabase_url, supabase_key)
+try:
+    logger.info("正在初始化 Supabase 客户端...")
+    supabase: Client = create_client(supabase_url, supabase_key)
+    logger.info("Supabase 客户端初始化成功。")
+except Exception as e:
+    logger.critical(f"初始化 Supabase 客户端时出错: {e}", exc_info=True)
+    sys.exit(1)
 
 # 初始化FastAPI应用
 app = FastAPI(
@@ -366,52 +376,7 @@ async def impl_stock_data_mcp_get_bars_range(request: Request, params: Dict[str,
             "request_id": str(request_id)
         })
 
-# MCP SSE 集成
-MCP_BASE_PATH = "/sse"  # MCP 服务的基础路径
 
-# 创建SSE服务器传输
-sse_transport = SseServerTransport(mcp)
-
-# 注册SSE路由
-@app.get("/sse")
-async def sse_get(request: Request):
-    logger.info(f"SSE GET 请求: {request.url} 来自 {request.client.host if request.client else 'unknown'}")
-    return await sse_transport.handle_get(request)
-
-@app.post("/sse")
-async def sse_post(request: Request):
-    client_host = request.client.host if request.client else "unknown"
-    logger.info(f"SSE POST 请求: {request.url} 来自 {client_host}")
-    
-    try:
-        # 使用SseServerTransport处理POST请求
-        response = await sse_transport.handle_post(request)
-        logger.info(f"SSE 响应已创建，开始流式传输数据")
-        return response
-    except Exception as e:
-        error_msg = f"服务器处理SSE请求时出错: {str(e)}"
-        logger.error(f"SSE处理错误: {error_msg}", exc_info=True)
-        return JSONResponse({"error": error_msg}, status_code=500)
-
-# 中间件处理SSE连接中断
-class OperationCanceledMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
-        try:
-            return await call_next(request)
-        except Exception as e:
-            if isinstance(e, (asyncio.CancelledError, ConnectionResetError)) or "cancell" in str(e).lower():
-                logger.info(f"客户端连接已关闭: {request.client.host if request.client else 'unknown'}, 路径: {request.url.path}, 错误: {str(e)}")
-                # 返回一个响应，避免未处理的异常
-                return JSONResponse(
-                    status_code=499,  # 客户端关闭请求
-                    content={"detail": "客户端已关闭连接", "status": "cancelled"}
-                )
-            else:
-                # 重新抛出其他异常
-                raise
-
-# 添加中间件
-app.add_middleware(OperationCanceledMiddleware)
 
 # 错误处理
 @app.exception_handler(Exception)
