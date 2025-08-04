@@ -33,4 +33,12 @@ jobs:
           --platform managed \
           --region asia-east1 \
           --allow-unauthenticated \
-          --set-env-vars="SUPABASE_URL=${{ secrets.SUPABASE_URL }},SUPABASE_KEY=${{ secrets.SUPABASE_KEY }}"
+          --set-env-vars="SUPABASE_URL=${{ secrets.SUPABASE_URL }},SUPABASE_KEY=${{ secrets.SUPABASE_KEY }},ENV=production" \
+          --cpu=2 \
+          --memory=1Gi \
+          --concurrency=100 \
+          --timeout=600 \
+          --min-instances=1 \
+          --max-instances=10 \
+          --session-affinity \
+          --port=8080

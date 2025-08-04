@@ -1,15 +1,26 @@
 import os
+import sys
 import datetime
 import json
+import asyncio
+import logging
 from typing import Optional, List, Dict, Any, AsyncGenerator
 from fastapi import FastAPI, HTTPException, Query, Path, Request, Depends
 from fastapi.responses import JSONResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.base import BaseHTTPMiddleware
 from pydantic import BaseModel, Field
 import pytz
 from dotenv import load_dotenv
 from supabase import create_client, Client
 from sse_starlette.sse import EventSourceResponse
+from mcp.server.fastmcp import FastMCP
+from mcp.server.sse import SseServerTransport
+
+# 配置日志
+logging.basicConfig(stream=sys.stderr, level=logging.INFO,
+                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 # 加载环境变量
 load_dotenv()
@@ -38,6 +49,13 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=[
+        "Content-Type", 
+        "Cache-Control", 
+        "Content-Disposition", 
+        "X-Accel-Buffering",
+        "Connection"
+    ],
 )
 
 # 表名映射
@@ -197,156 +215,286 @@ async def get_bars_range(
         "stock_code": stock_code
     }
 
-# MCP工具定义
-class MCPTool(BaseModel):
-    name: str
-    description: str
-    parameters: Dict[str, Any]
-
-class MCPToolResponse(BaseModel):
-    type: str = "function"
-    function: Dict[str, Any]
+# 初始化MCP实例
+mcp = FastMCP("股票分时数据查询工具")
 
 # 定义MCP工具
-latest_bars_tool = {
-    "name": "get_latest_bars",
-    "description": "查询特定股票在给定结束时间前推X条分时数据",
-    "parameters": {
-        "type": "object",
-        "properties": {
-            "time_level": {
-                "type": "string",
-                "description": "时间级别，可选值为15min, 30min, 60min",
-                "enum": ["15min", "30min", "60min"]
-            },
-            "stock_code": {
-                "type": "string",
-                "description": "股票代码，例如sz002353"
-            },
-            "end_time": {
-                "type": "string",
-                "description": "结束时间（可选），格式为YYYY-MM-DDTHH:MM:SS",
-                "format": "date-time"
-            },
-            "limit": {
-                "type": "integer",
-                "description": "返回的记录数量（可选），默认为10",
-                "default": 10
-            }
-        },
-        "required": ["time_level", "stock_code"]
-    }
-}
+@mcp.tool(
+    name="stock_data_mcp_get_latest_bars",
+    description="查询特定股票在给定结束时间前推X条分时数据，支持15分钟、30分钟和60分钟K线"
+)
+def stock_data_mcp_get_latest_bars(
+    time_level: str,
+    stock_code: str,
+    end_time: Optional[str] = None,
+    limit: int = 10
+) -> str:
+    """查询特定股票在给定结束时间前推X条分时数据
+    
+    参数:
+        time_level: 时间级别，可选值为15min, 30min, 60min
+        stock_code: 股票代码，例如sz002353
+        end_time: 结束时间（可选），格式为YYYY-MM-DDTHH:MM:SS
+        limit: 返回的记录数量（可选），默认为10
+    """
+    # 这个函数将通过SSE事件生成器调用，不需要在这里实现具体逻辑
+    # 实际逻辑在stock_data_event_generator中处理
+    pass
 
-bars_range_tool = {
-    "name": "get_bars_range",
-    "description": "查询特定股票在给定时间区间内的分时数据",
-    "parameters": {
-        "type": "object",
-        "properties": {
-            "time_level": {
-                "type": "string",
-                "description": "时间级别，可选值为15min, 30min, 60min",
-                "enum": ["15min", "30min", "60min"]
-            },
-            "stock_code": {
-                "type": "string",
-                "description": "股票代码，例如sz002353"
-            },
-            "start_time": {
-                "type": "string",
-                "description": "开始时间，格式为YYYY-MM-DDTHH:MM:SS",
-                "format": "date-time"
-            },
-            "end_time": {
-                "type": "string",
-                "description": "结束时间，格式为YYYY-MM-DDTHH:MM:SS",
-                "format": "date-time"
-            }
-        },
-        "required": ["time_level", "stock_code", "start_time", "end_time"]
-    }
-}
+@mcp.tool(
+    name="stock_data_mcp_get_bars_range",
+    description="查询特定股票在给定时间区间内的分时数据，支持15分钟、30分钟和60分钟K线"
+)
+def stock_data_mcp_get_bars_range(
+    time_level: str,
+    stock_code: str,
+    start_time: str,
+    end_time: str
+) -> str:
+    """查询特定股票在给定时间区间内的分时数据
+    
+    参数:
+        time_level: 时间级别，可选值为15min, 30min, 60min
+        stock_code: 股票代码，例如sz002353
+        start_time: 开始时间，格式为YYYY-MM-DDTHH:MM:SS
+        end_time: 结束时间，格式为YYYY-MM-DDTHH:MM:SS
+    """
+    # 这个函数将通过SSE事件生成器调用，不需要在这里实现具体逻辑
+    # 实际逻辑在stock_data_event_generator中处理
+    pass
 
-# 工具列表
-mcp_tools = [latest_bars_tool, bars_range_tool]
-
-# SSE端点
-async def stock_data_event_generator(request: Request, tool_name: str, params: Dict[str, Any]) -> AsyncGenerator[str, None]:
+# 实现MCP工具的实际处理逻辑
+@mcp.tool_impl("stock_data_mcp_get_latest_bars")
+async def impl_stock_data_mcp_get_latest_bars(request: Request, params: Dict[str, Any]) -> AsyncGenerator[str, None]:
+    request_id = id(request)
+    client_host = request.client.host if request.client else "unknown"
+    logger.info(f"SSE连接开始 [ID:{request_id}] 来自 {client_host} - 工具: stock_data_mcp_get_latest_bars, 参数: {params}")
+    
     try:
-        # 根据工具名称调用相应的函数
-        if tool_name == "get_latest_bars":
-            # 处理日期时间参数
-            if "end_time" in params and params["end_time"]:
+        # 发送初始连接确认消息
+        logger.info(f"SSE [ID:{request_id}] 发送连接确认消息")
+        yield json.dumps({
+            "status": "connected", 
+            "message": "SSE连接已建立", 
+            "request_id": str(request_id)
+        })
+        
+        # 处理日期时间参数
+        if "end_time" in params and params["end_time"]:
+            try:
                 params["end_time"] = datetime.datetime.fromisoformat(params["end_time"].replace("Z", "+00:00"))
-            
+                logger.info(f"SSE [ID:{request_id}] 解析end_time: {params['end_time']}")
+            except ValueError as ve:
+                error_msg = f"无效的日期时间格式: {params['end_time']}，请使用ISO格式 YYYY-MM-DDTHH:MM:SS"
+                logger.error(f"SSE [ID:{request_id}] 日期解析错误: {error_msg} - {str(ve)}")
+                yield json.dumps({"error": error_msg, "status": "error"})
+                return
+        
+        # 发送处理状态
+        yield json.dumps({"status": "processing", "message": f"正在查询股票 {params['stock_code']} 的 {params['time_level']} 级别数据"})
+        
+        try:
             result = await get_latest_bars(
                 time_level=params["time_level"],
                 stock_code=params["stock_code"],
                 end_time=params.get("end_time"),
                 limit=params.get("limit", 10)
             )
-        elif tool_name == "get_bars_range":
-            # 处理日期时间参数
+            logger.info(f"SSE [ID:{request_id}] 成功获取最新数据: {params['stock_code']}, 记录数: {len(result['data'])}")
+            
+            # 转换结果为可序列化的字典
+            result_dict = {
+                "data": [dict(item) for item in result["data"]],
+                "count": result["count"],
+                "time_level": result["time_level"],
+                "stock_code": result["stock_code"]
+            }
+            
+            # 发送数据处理状态
+            yield json.dumps({"status": "data_ready", "message": f"数据已准备就绪，共 {result['count']} 条记录"})
+            
+            # 发送结果
+            logger.info(f"SSE [ID:{request_id}] 发送数据结果，记录数: {result['count']}")
+            yield json.dumps(result_dict)
+            
+            # 发送完成消息
+            logger.info(f"SSE [ID:{request_id}] 数据传输完成")
+            yield json.dumps({"status": "completed", "message": "数据传输完成"})
+            
+        except Exception as func_err:
+            error_msg = f"获取最新数据失败: {str(func_err)}"
+            logger.error(f"SSE [ID:{request_id}] 函数调用错误: {error_msg}", exc_info=True)
+            yield json.dumps({"error": error_msg, "status": "error"})
+            return
+            
+    except Exception as e:
+        error_msg = f"SSE生成器错误: {str(e)}"
+        logger.error(f"SSE [ID:{request_id}] 未处理的异常: {error_msg}", exc_info=True)
+        yield json.dumps({
+            "error": error_msg, 
+            "status": "error",
+            "request_id": str(request_id)
+        })
+
+@mcp.tool_impl("stock_data_mcp_get_bars_range")
+async def impl_stock_data_mcp_get_bars_range(request: Request, params: Dict[str, Any]) -> AsyncGenerator[str, None]:
+    request_id = id(request)
+    client_host = request.client.host if request.client else "unknown"
+    logger.info(f"SSE连接开始 [ID:{request_id}] 来自 {client_host} - 工具: stock_data_mcp_get_bars_range, 参数: {params}")
+    
+    try:
+        # 发送初始连接确认消息
+        logger.info(f"SSE [ID:{request_id}] 发送连接确认消息")
+        yield json.dumps({
+            "status": "connected", 
+            "message": "SSE连接已建立", 
+            "request_id": str(request_id)
+        })
+        
+        # 处理日期时间参数
+        try:
             start_time = datetime.datetime.fromisoformat(params["start_time"].replace("Z", "+00:00"))
             end_time = datetime.datetime.fromisoformat(params["end_time"].replace("Z", "+00:00"))
-            
+            logger.info(f"SSE [ID:{request_id}] 解析时间区间: {start_time} 至 {end_time}")
+        except ValueError as ve:
+            error_msg = f"无效的日期时间格式: {str(ve)}，请使用ISO格式 YYYY-MM-DDTHH:MM:SS"
+            logger.error(f"SSE [ID:{request_id}] 日期解析错误: {error_msg}")
+            yield json.dumps({"error": error_msg, "status": "error"})
+            return
+        
+        # 发送处理状态
+        yield json.dumps({"status": "processing", "message": f"正在查询股票 {params['stock_code']} 在 {start_time} 至 {end_time} 期间的 {params['time_level']} 级别数据"})
+        
+        try:
             result = await get_bars_range(
                 time_level=params["time_level"],
                 stock_code=params["stock_code"],
                 start_time=start_time,
                 end_time=end_time
             )
-        else:
-            yield json.dumps({"error": f"未知的工具名称: {tool_name}"})
+            logger.info(f"SSE [ID:{request_id}] 成功获取时间区间数据: {params['stock_code']}, 记录数: {len(result['data'])}")
+            
+            # 转换结果为可序列化的字典
+            result_dict = {
+                "data": [dict(item) for item in result["data"]],
+                "count": result["count"],
+                "time_level": result["time_level"],
+                "stock_code": result["stock_code"]
+            }
+            
+            # 发送数据处理状态
+            yield json.dumps({"status": "data_ready", "message": f"数据已准备就绪，共 {result['count']} 条记录"})
+            
+            # 发送结果
+            logger.info(f"SSE [ID:{request_id}] 发送数据结果，记录数: {result['count']}")
+            yield json.dumps(result_dict)
+            
+            # 发送完成消息
+            logger.info(f"SSE [ID:{request_id}] 数据传输完成")
+            yield json.dumps({"status": "completed", "message": "数据传输完成"})
+            
+        except Exception as func_err:
+            error_msg = f"获取时间区间数据失败: {str(func_err)}"
+            logger.error(f"SSE [ID:{request_id}] 函数调用错误: {error_msg}", exc_info=True)
+            yield json.dumps({"error": error_msg, "status": "error"})
             return
-        
-        # 转换结果为可序列化的字典
-        result_dict = {
-            "data": [dict(item) for item in result["data"]],
-            "count": result["count"],
-            "time_level": result["time_level"],
-            "stock_code": result["stock_code"]
-        }
-        
-        # 发送结果
-        yield json.dumps(result_dict)
+            
     except Exception as e:
-        yield json.dumps({"error": str(e)})
+        error_msg = f"SSE生成器错误: {str(e)}"
+        logger.error(f"SSE [ID:{request_id}] 未处理的异常: {error_msg}", exc_info=True)
+        yield json.dumps({
+            "error": error_msg, 
+            "status": "error",
+            "request_id": str(request_id)
+        })
 
+# MCP SSE 集成
+MCP_BASE_PATH = "/sse"  # MCP 服务的基础路径
+
+# 创建SSE服务器传输
+sse_transport = SseServerTransport(mcp)
+
+# 注册SSE路由
 @app.get("/sse")
-async def sse(request: Request):
-    return JSONResponse({"tools": mcp_tools})
+async def sse_get(request: Request):
+    logger.info(f"SSE GET 请求: {request.url} 来自 {request.client.host if request.client else 'unknown'}")
+    return await sse_transport.handle_get(request)
 
 @app.post("/sse")
 async def sse_post(request: Request):
-    # 解析请求体
-    data = await request.json()
+    client_host = request.client.host if request.client else "unknown"
+    logger.info(f"SSE POST 请求: {request.url} 来自 {client_host}")
     
-    # 验证请求格式
-    if "type" not in data or data["type"] != "function":
-        return JSONResponse({"error": "无效的请求类型"}, status_code=400)
-    
-    if "function" not in data or "name" not in data["function"] or "parameters" not in data["function"]:
-        return JSONResponse({"error": "无效的函数调用格式"}, status_code=400)
-    
-    tool_name = data["function"]["name"]
-    params = data["function"]["parameters"]
-    
-    # 验证工具名称
-    valid_tools = [tool["name"] for tool in mcp_tools]
-    if tool_name not in valid_tools:
-        return JSONResponse({"error": f"未知的工具名称: {tool_name}"}, status_code=400)
-    
-    # 返回SSE响应
-    return EventSourceResponse(stock_data_event_generator(request, tool_name, params))
+    try:
+        # 使用SseServerTransport处理POST请求
+        response = await sse_transport.handle_post(request)
+        logger.info(f"SSE 响应已创建，开始流式传输数据")
+        return response
+    except Exception as e:
+        error_msg = f"服务器处理SSE请求时出错: {str(e)}"
+        logger.error(f"SSE处理错误: {error_msg}", exc_info=True)
+        return JSONResponse({"error": error_msg}, status_code=500)
+
+# 中间件处理SSE连接中断
+class OperationCanceledMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        try:
+            return await call_next(request)
+        except Exception as e:
+            if isinstance(e, (asyncio.CancelledError, ConnectionResetError)) or "cancell" in str(e).lower():
+                logger.info(f"客户端连接已关闭: {request.client.host if request.client else 'unknown'}, 路径: {request.url.path}, 错误: {str(e)}")
+                # 返回一个响应，避免未处理的异常
+                return JSONResponse(
+                    status_code=499,  # 客户端关闭请求
+                    content={"detail": "客户端已关闭连接", "status": "cancelled"}
+                )
+            else:
+                # 重新抛出其他异常
+                raise
+
+# 添加中间件
+app.add_middleware(OperationCanceledMiddleware)
 
 # 错误处理
 @app.exception_handler(Exception)
-async def generic_exception_handler(request, exc):
+async def generic_exception_handler(request: Request, exc: Exception):
+    # 获取请求信息用于日志记录
+    client_host = request.client.host if request.client else "unknown"
+    path = request.url.path
+    method = request.method
+    
+    # 根据异常类型设置不同的状态码和错误消息
+    if isinstance(exc, HTTPException):
+        status_code = exc.status_code
+        error_msg = str(exc.detail)
+        log_level = logging.WARNING
+    elif isinstance(exc, asyncio.CancelledError):
+        status_code = 499  # 客户端关闭请求
+        error_msg = "客户端关闭了请求"
+        log_level = logging.INFO
+    else:
+        status_code = 500
+        error_msg = f"服务器内部错误: {str(exc)}"
+        log_level = logging.ERROR
+    
+    # 记录日志
+    log_msg = f"{method} {path} 来自 {client_host} 失败: {error_msg}"
+    if log_level == logging.ERROR:
+        logger.error(log_msg, exc_info=True)
+    elif log_level == logging.WARNING:
+        logger.warning(log_msg)
+    else:
+        logger.info(log_msg)
+    
+    # 返回JSON响应
     return JSONResponse(
-        status_code=500,
-        content={"detail": f"服务器内部错误: {str(exc)}"},
+        status_code=status_code,
+        content={
+            "error": error_msg,
+            "status": "error",
+            "path": str(path),
+            "method": method
+        },
     )
 
 if __name__ == "__main__":
@@ -356,7 +504,21 @@ if __name__ == "__main__":
     # 从环境变量获取端口号，默认为8080（Cloud Run标准端口）
     port = int(os.environ.get("PORT", 8080))
     
-    # 在生产环境中禁用reload
-    reload = os.environ.get("ENV", "development") == "development"
+    # 根据环境变量决定是否启用热重载
+    env = os.environ.get("ENV", "development")
+    reload = env == "development"
     
-    uvicorn.run("stock_data_api:app", host="0.0.0.0", port=port, reload=reload)
+    # 日志级别根据环境设置
+    log_level = "info" if env == "production" else "debug"
+    
+    # 启动服务器
+    logger.info(f"启动服务器: 环境={env}, 端口={port}, 热重载={reload}, 日志级别={log_level}")
+    uvicorn.run(
+        "stock_data_api:app", 
+        host="0.0.0.0", 
+        port=port, 
+        reload=reload,
+        log_level=log_level,
+        access_log=True,
+        timeout_keep_alive=65  # 增加保持连接超时时间，有助于SSE长连接
+    )

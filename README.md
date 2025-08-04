@@ -66,8 +66,6 @@ git push -u origin main
    - 方法2：使用GitHub Actions自动部署
    - 方法3：使用Cloud Build自动部署
 
-详细部署步骤请参考 [DEPLOY.md](DEPLOY.md) 文件。
-
 ## API文档
 
 启动服务后，访问 http://localhost:8000/docs 查看完整的API文档
@@ -131,14 +129,14 @@ POST /sse
 
 支持的工具：
 
-1. **get_latest_bars**：查询特定股票在给定结束时间前推X条分时数据
+1. **stock_data_mcp_get_latest_bars**：查询特定股票在给定结束时间前推X条分时数据
    - 参数：
      - `time_level`: 时间级别，可选值为 `15min`, `30min`, `60min`
      - `stock_code`: 股票代码，例如 `sz002353`
      - `end_time`: 结束时间（可选），格式为 `YYYY-MM-DDTHH:MM:SS`
      - `limit`: 返回的记录数量（可选），默认为10
 
-2. **get_bars_range**：查询特定股票在给定时间区间内的分时数据
+2. **stock_data_mcp_get_bars_range**：查询特定股票在给定时间区间内的分时数据
    - 参数：
      - `time_level`: 时间级别，可选值为 `15min`, `30min`, `60min`
      - `stock_code`: 股票代码，例如 `sz002353`
@@ -149,18 +147,18 @@ POST /sse
 
 ### 示例
 
-使用curl调用get_latest_bars工具：
+使用curl调用stock_data_mcp_get_latest_bars工具：
 
 ```bash
 curl -X POST http://127.0.0.1:8000/sse \
 -H "Content-Type: application/json" \
--d '{"type":"function","function":{"name":"get_latest_bars","parameters":{"time_level":"15min","stock_code":"sz002353","limit":5}}}'
+-d '{"type":"function","function":{"name":"stock_data_mcp_get_latest_bars","parameters":{"time_level":"15min","stock_code":"sz002353","limit":5}}}'
 ```
 
-使用curl调用get_bars_range工具：
+使用curl调用stock_data_mcp_get_bars_range工具：
 
 ```bash
 curl -X POST http://127.0.0.1:8000/sse \
 -H "Content-Type: application/json" \
--d '{"type":"function","function":{"name":"get_bars_range","parameters":{"time_level":"15min","stock_code":"sz002353","start_time":"2025-08-01T06:00:00","end_time":"2025-08-01T07:00:00"}}}'
+-d '{"type":"function","function":{"name":"stock_data_mcp_get_bars_range","parameters":{"time_level":"15min","stock_code":"sz002353","start_time":"2025-08-01T06:00:00","end_time":"2025-08-01T07:00:00"}}}'
 ```

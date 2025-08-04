@@ -1,7 +1,7 @@
 # App Engine配置文件
 runtime: python312
 
-entrypoint: uvicorn stock_data_api:app --host=0.0.0.0 --port=$PORT
+entrypoint: uvicorn stock_data_api:app --host=0.0.0.0 --port=$PORT --timeout-keep-alive=65 --log-level=info
 
 env_variables:
   # 设置环境变量
@@ -11,9 +11,12 @@ env_variables:
   # SUPABASE_KEY: "your-supabase-key"
 
 automatic_scaling:
-  min_instances: 0
+  min_instances: 1
   max_instances: 10
   target_cpu_utilization: 0.65
+  min_pending_latency: 30ms
+  max_pending_latency: 300ms
+  max_concurrent_requests: 100
 
 handlers:
   - url: /.*
