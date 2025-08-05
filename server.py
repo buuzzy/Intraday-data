@@ -229,7 +229,11 @@ async def get_bars_range(
 mcp = FastMCP("股票分时数据查询工具")
 
 # 挂载MCP到FastAPI应用
-mcp.mount_to_app(app, "/mcp")
+# 删除这一行
+# mcp.mount_to_app(app, "/mcp")
+
+# 新增（或替换为）
+app.mount("/mcp", mcp.sse_app())
 
 # 实现MCP工具的实际处理逻辑
 @mcp.tool("stock_data_mcp_get_latest_bars")
