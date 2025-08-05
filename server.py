@@ -226,7 +226,7 @@ async def get_bars_range(
     }
 
 # 初始化MCP实例
-mcp = FastMCP("股票分时数据查询工具")
+mcp = FastMCP("股票分时数据查询工具", description="提供股票分时数据查询和 SSE 流式推送的 MCP 服务")
 
 # 挂载MCP到FastAPI应用
 # 删除这一行
@@ -238,6 +238,18 @@ app.mount("/mcp", mcp.sse_app())
 # 实现MCP工具的实际处理逻辑
 @mcp.tool("stock_data_mcp_get_latest_bars")
 async def impl_stock_data_mcp_get_latest_bars(request: Any, params: Dict[str, Any]) -> Any:
+    """
+    获取最新的分时数据（MCP 工具）
+
+    参数:
+        time_level: 分钟级别，如 "15min"、"30min"、"60min"
+        stock_code: 股票代码，例如 "sz002353"
+        end_time: 结束时间，ISO 格式字符串，可选
+        limit: 返回记录数量，默认 10
+
+    返回:
+        SSE 数据流，包含查询进度和结果
+    """
     request_id = id(request)
     client_host = request.client.host if request.client else "unknown"
     logger.info(f"SSE连接开始 [ID:{request_id}] 来自 {client_host} - 工具: stock_data_mcp_get_latest_bars, 参数: {params}")
@@ -310,6 +322,18 @@ async def impl_stock_data_mcp_get_latest_bars(request: Any, params: Dict[str, An
 
 @mcp.tool("stock_data_mcp_get_bars_range")
 async def impl_stock_data_mcp_get_bars_range(request: Any, params: Dict[str, Any]) -> Any:
+    """
+    获取指定时间区间的分时数据（MCP 工具）
+
+    参数:
+        time_level: 分钟级别，如 "15min"、"30min"、"60min"
+        stock_code: 股票代码，例如 "sz002353"
+        start_time: 起始时间，ISO 格式字符串
+        end_time: 结束时间，ISO 格式字符串
+
+    返回:
+        SSE 数据流，包含查询进度和结果
+    """
     request_id = id(request)
     client_host = request.client.host if request.client else "unknown"
     logger.info(f"SSE连接开始 [ID:{request_id}] 来自 {client_host} - 工具: stock_data_mcp_get_bars_range, 参数: {params}")
