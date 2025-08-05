@@ -237,7 +237,7 @@ app.mount("/mcp", mcp.sse_app())
 
 # 实现MCP工具的实际处理逻辑
 @mcp.tool("stock_data_mcp_get_latest_bars")
-async def impl_stock_data_mcp_get_latest_bars(request: Request, params: Dict[str, Any]) -> AsyncGenerator[str, None]:
+async def impl_stock_data_mcp_get_latest_bars(request: Any, params: Dict[str, Any]) -> Any:
     request_id = id(request)
     client_host = request.client.host if request.client else "unknown"
     logger.info(f"SSE连接开始 [ID:{request_id}] 来自 {client_host} - 工具: stock_data_mcp_get_latest_bars, 参数: {params}")
@@ -309,7 +309,7 @@ async def impl_stock_data_mcp_get_latest_bars(request: Request, params: Dict[str
         })
 
 @mcp.tool("stock_data_mcp_get_bars_range")
-async def impl_stock_data_mcp_get_bars_range(request: Request, params: Dict[str, Any]) -> AsyncGenerator[str, None]:
+async def impl_stock_data_mcp_get_bars_range(request: Any, params: Dict[str, Any]) -> Any:
     request_id = id(request)
     client_host = request.client.host if request.client else "unknown"
     logger.info(f"SSE连接开始 [ID:{request_id}] 来自 {client_host} - 工具: stock_data_mcp_get_bars_range, 参数: {params}")
@@ -452,5 +452,19 @@ if __name__ == "__main__":
 MCP_BASE_PATH = "/sse"
 messages_full_path = f"{MCP_BASE_PATH}/messages/"
 sse_transport = SseServerTransport(messages_full_path)
+
+# 定义 SSE 握手处理函数，解决 NameError
+async def handle_mcp_sse_handshake(request: Any) -> None:
+    """MCP SSE 握手处理，负责升级连接并启动 FastMCP Server。"""
+    async with sse_transport.connect_sse(
+        request.scope,
+        request.receive,
+        request._send,  # type: ignore
+    ) as (read_stream, write_stream):
+        await mcp._mcp_server.run(
+            read_stream,
+            write_stream,
+            mcp._mcp_server.create_initialization_options(),
+        )
 app.add_route(MCP_BASE_PATH, handle_mcp_sse_handshake, methods=["GET"])
 app.mount(messages_full_path, sse_transport.handle_post_message)
