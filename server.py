@@ -248,77 +248,23 @@ async def impl_stock_data_mcp_get_latest_bars(request: Any, params: Dict[str, An
         limit: 返回记录数量，默认 10
 
     返回:
-        SSE 数据流，包含查询进度和结果
+        dict: 查询结果，包含数据列表、记录数、时间级别和股票代码
     """
-    request_id = id(request)
-    client_host = request.client.host if request.client else "unknown"
-    logger.info(f"SSE连接开始 [ID:{request_id}] 来自 {client_host} - 工具: stock_data_mcp_get_latest_bars, 参数: {params}")
-    
     try:
-        # 发送初始连接确认消息
-        logger.info(f"SSE [ID:{request_id}] 发送连接确认消息")
-        yield json.dumps({
-            "status": "connected", 
-            "message": "SSE连接已建立", 
-            "request_id": str(request_id)
-        })
-        
-        # 处理日期时间参数
-        if "end_time" in params and params["end_time"]:
-            try:
-                params["end_time"] = datetime.datetime.fromisoformat(params["end_time"].replace("Z", "+00:00"))
-                logger.info(f"SSE [ID:{request_id}] 解析end_time: {params['end_time']}")
-            except ValueError as ve:
-                error_msg = f"无效的日期时间格式: {params['end_time']}，请使用ISO格式 YYYY-MM-DDTHH:MM:SS"
-                logger.error(f"SSE [ID:{request_id}] 日期解析错误: {error_msg} - {str(ve)}")
-                yield json.dumps({"error": error_msg, "status": "error"})
-                return
-        
-        # 发送处理状态
-        yield json.dumps({"status": "processing", "message": f"正在查询股票 {params['stock_code']} 的 {params['time_level']} 级别数据"})
-        
-        try:
-            result = await get_latest_bars(
-                time_level=params["time_level"],
-                stock_code=params["stock_code"],
-                end_time=params.get("end_time"),
-                limit=params.get("limit", 10)
-            )
-            logger.info(f"SSE [ID:{request_id}] 成功获取最新数据: {params['stock_code']}, 记录数: {len(result['data'])}")
-            
-            # 转换结果为可序列化的字典
-            result_dict = {
-                "data": [dict(item) for item in result["data"]],
-                "count": result["count"],
-                "time_level": result["time_level"],
-                "stock_code": result["stock_code"]
-            }
-            
-            # 发送数据处理状态
-            yield json.dumps({"status": "data_ready", "message": f"数据已准备就绪，共 {result['count']} 条记录"})
-            
-            # 发送结果
-            logger.info(f"SSE [ID:{request_id}] 发送数据结果，记录数: {result['count']}")
-            yield json.dumps(result_dict)
-            
-            # 发送完成消息
-            logger.info(f"SSE [ID:{request_id}] 数据传输完成")
-            yield json.dumps({"status": "completed", "message": "数据传输完成"})
-            
-        except Exception as func_err:
-            error_msg = f"获取最新数据失败: {str(func_err)}"
-            logger.error(f"SSE [ID:{request_id}] 函数调用错误: {error_msg}", exc_info=True)
-            yield json.dumps({"error": error_msg, "status": "error"})
-            return
-            
+        end_time_value = None
+        if params.get("end_time"):
+            end_time_value = datetime.datetime.fromisoformat(params["end_time"].replace("Z", "+00:00"))
+
+        result = await get_latest_bars(
+            time_level=params["time_level"],
+            stock_code=params["stock_code"],
+            end_time=end_time_value,
+            limit=params.get("limit", 10)
+        )
+        return result
     except Exception as e:
-        error_msg = f"SSE生成器错误: {str(e)}"
-        logger.error(f"SSE [ID:{request_id}] 未处理的异常: {error_msg}", exc_info=True)
-        yield json.dumps({
-            "error": error_msg, 
-            "status": "error",
-            "request_id": str(request_id)
-        })
+        logger.error(f"获取最新分时数据失败: {e}", exc_info=True)
+        raise
 
 @mcp.tool("stock_data_mcp_get_bars_range")
 async def impl_stock_data_mcp_get_bars_range(request: Any, params: Dict[str, Any]) -> Any:
@@ -332,77 +278,22 @@ async def impl_stock_data_mcp_get_bars_range(request: Any, params: Dict[str, Any
         end_time: 结束时间，ISO 格式字符串
 
     返回:
-        SSE 数据流，包含查询进度和结果
+        dict: 查询结果，包含数据列表、记录数、时间级别和股票代码
     """
-    request_id = id(request)
-    client_host = request.client.host if request.client else "unknown"
-    logger.info(f"SSE连接开始 [ID:{request_id}] 来自 {client_host} - 工具: stock_data_mcp_get_bars_range, 参数: {params}")
-    
     try:
-        # 发送初始连接确认消息
-        logger.info(f"SSE [ID:{request_id}] 发送连接确认消息")
-        yield json.dumps({
-            "status": "connected", 
-            "message": "SSE连接已建立", 
-            "request_id": str(request_id)
-        })
-        
-        # 处理日期时间参数
-        try:
-            start_time = datetime.datetime.fromisoformat(params["start_time"].replace("Z", "+00:00"))
-            end_time = datetime.datetime.fromisoformat(params["end_time"].replace("Z", "+00:00"))
-            logger.info(f"SSE [ID:{request_id}] 解析时间区间: {start_time} 至 {end_time}")
-        except ValueError as ve:
-            error_msg = f"无效的日期时间格式: {str(ve)}，请使用ISO格式 YYYY-MM-DDTHH:MM:SS"
-            logger.error(f"SSE [ID:{request_id}] 日期解析错误: {error_msg}")
-            yield json.dumps({"error": error_msg, "status": "error"})
-            return
-        
-        # 发送处理状态
-        yield json.dumps({"status": "processing", "message": f"正在查询股票 {params['stock_code']} 在 {start_time} 至 {end_time} 期间的 {params['time_level']} 级别数据"})
-        
-        try:
-            result = await get_bars_range(
-                time_level=params["time_level"],
-                stock_code=params["stock_code"],
-                start_time=start_time,
-                end_time=end_time
-            )
-            logger.info(f"SSE [ID:{request_id}] 成功获取时间区间数据: {params['stock_code']}, 记录数: {len(result['data'])}")
-            
-            # 转换结果为可序列化的字典
-            result_dict = {
-                "data": [dict(item) for item in result["data"]],
-                "count": result["count"],
-                "time_level": result["time_level"],
-                "stock_code": result["stock_code"]
-            }
-            
-            # 发送数据处理状态
-            yield json.dumps({"status": "data_ready", "message": f"数据已准备就绪，共 {result['count']} 条记录"})
-            
-            # 发送结果
-            logger.info(f"SSE [ID:{request_id}] 发送数据结果，记录数: {result['count']}")
-            yield json.dumps(result_dict)
-            
-            # 发送完成消息
-            logger.info(f"SSE [ID:{request_id}] 数据传输完成")
-            yield json.dumps({"status": "completed", "message": "数据传输完成"})
-            
-        except Exception as func_err:
-            error_msg = f"获取时间区间数据失败: {str(func_err)}"
-            logger.error(f"SSE [ID:{request_id}] 函数调用错误: {error_msg}", exc_info=True)
-            yield json.dumps({"error": error_msg, "status": "error"})
-            return
-            
+        start_time_value = datetime.datetime.fromisoformat(params["start_time"].replace("Z", "+00:00"))
+        end_time_value = datetime.datetime.fromisoformat(params["end_time"].replace("Z", "+00:00"))
+
+        result = await get_bars_range(
+            time_level=params["time_level"],
+            stock_code=params["stock_code"],
+            start_time=start_time_value,
+            end_time=end_time_value
+        )
+        return result
     except Exception as e:
-        error_msg = f"SSE生成器错误: {str(e)}"
-        logger.error(f"SSE [ID:{request_id}] 未处理的异常: {error_msg}", exc_info=True)
-        yield json.dumps({
-            "error": error_msg, 
-            "status": "error",
-            "request_id": str(request_id)
-        })
+        logger.error(f"获取时间区间分时数据失败: {e}", exc_info=True)
+        raise
 
 
 
