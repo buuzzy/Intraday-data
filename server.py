@@ -237,7 +237,7 @@ app.mount("/mcp", mcp.sse_app())
 
 # 实现MCP工具的实际处理逻辑
 @mcp.tool("stock_data_mcp_get_latest_bars")
-async def impl_stock_data_mcp_get_latest_bars(request: Any, params: Dict[str, Any]) -> Any:
+async def impl_stock_data_mcp_get_latest_bars(params: Dict[str, Any]) -> Any:
     """
     获取最新的分时数据（MCP 工具）
 
@@ -267,7 +267,7 @@ async def impl_stock_data_mcp_get_latest_bars(request: Any, params: Dict[str, An
         raise
 
 @mcp.tool("stock_data_mcp_get_bars_range")
-async def impl_stock_data_mcp_get_bars_range(request: Any, params: Dict[str, Any]) -> Any:
+async def impl_stock_data_mcp_get_bars_range(params: Dict[str, Any]) -> Any:
     """
     获取指定时间区间的分时数据（MCP 工具）
 
