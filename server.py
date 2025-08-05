@@ -449,3 +449,8 @@ if __name__ == "__main__":
         access_log=True,
         timeout_keep_alive=65  # 增加保持连接超时时间，有助于SSE长连接
     )
+MCP_BASE_PATH = "/sse"
+messages_full_path = f"{MCP_BASE_PATH}/messages/"
+sse_transport = SseServerTransport(messages_full_path)
+app.add_route(MCP_BASE_PATH, handle_mcp_sse_handshake, methods=["GET"])
+app.mount(messages_full_path, sse_transport.handle_post_message)
