@@ -72,7 +72,10 @@ app.add_middleware(
 TABLE_MAPPING = {
     "15min": "bars_15min",
     "30min": "bars_30min",
-    "60min": "bars_60min"
+    "60min": "bars_60min",
+    "daily": "bars_daily",
+    "weekly": "bars_weekly",
+    "monthly": "bars_monthly"
 }
 
 # 数据模型
@@ -295,6 +298,136 @@ async def impl_stock_data_mcp_get_bars_range(params: Dict[str, Any]) -> Any:
         logger.error(f"获取时间区间分时数据失败: {e}", exc_info=True)
         raise
 
+
+# ================================ 日/周/月线专用 MCP 工具 ================================
+
+@mcp.tool("stock_data_mcp_get_latest_daily_bars")
+async def impl_stock_data_mcp_get_latest_daily_bars(params: Dict[str, Any]) -> Any:
+    """
+    获取最新日线数据（MCP 工具）
+    参数:
+        stock_code: 股票代码，例如 "sz002353"
+        end_time: 结束时间，ISO 格式字符串，可选
+        limit: 返回记录数量，默认 10
+    """
+    try:
+        end_time_value = None
+        if params.get("end_time"):
+            end_time_value = datetime.datetime.fromisoformat(params["end_time"].replace("Z", "+00:00"))
+
+        return await get_latest_bars(
+            time_level="daily",
+            stock_code=params["stock_code"],
+            end_time=end_time_value,
+            limit=params.get("limit", 10)
+        )
+    except Exception as e:
+        logger.error(f"获取最新日线数据失败: {e}", exc_info=True)
+        raise
+
+
+@mcp.tool("stock_data_mcp_get_latest_weekly_bars")
+async def impl_stock_data_mcp_get_latest_weekly_bars(params: Dict[str, Any]) -> Any:
+    """
+    获取最新周线数据（MCP 工具）
+    """
+    try:
+        end_time_value = None
+        if params.get("end_time"):
+            end_time_value = datetime.datetime.fromisoformat(params["end_time"].replace("Z", "+00:00"))
+
+        return await get_latest_bars(
+            time_level="weekly",
+            stock_code=params["stock_code"],
+            end_time=end_time_value,
+            limit=params.get("limit", 10)
+        )
+    except Exception as e:
+        logger.error(f"获取最新周线数据失败: {e}", exc_info=True)
+        raise
+
+
+@mcp.tool("stock_data_mcp_get_latest_monthly_bars")
+async def impl_stock_data_mcp_get_latest_monthly_bars(params: Dict[str, Any]) -> Any:
+    """
+    获取最新月线数据（MCP 工具）
+    """
+    try:
+        end_time_value = None
+        if params.get("end_time"):
+            end_time_value = datetime.datetime.fromisoformat(params["end_time"].replace("Z", "+00:00"))
+
+        return await get_latest_bars(
+            time_level="monthly",
+            stock_code=params["stock_code"],
+            end_time=end_time_value,
+            limit=params.get("limit", 10)
+        )
+    except Exception as e:
+        logger.error(f"获取最新月线数据失败: {e}", exc_info=True)
+        raise
+
+
+@mcp.tool("stock_data_mcp_get_daily_bars_range")
+async def impl_stock_data_mcp_get_daily_bars_range(params: Dict[str, Any]) -> Any:
+    """
+    获取指定时间区间的日线数据（MCP 工具）
+    """
+    try:
+        start_time_value = datetime.datetime.fromisoformat(params["start_time"].replace("Z", "+00:00"))
+        end_time_value = datetime.datetime.fromisoformat(params["end_time"].replace("Z", "+00:00"))
+
+        return await get_bars_range(
+            time_level="daily",
+            stock_code=params["stock_code"],
+            start_time=start_time_value,
+            end_time=end_time_value
+        )
+    except Exception as e:
+        logger.error(f"获取日线区间数据失败: {e}", exc_info=True)
+        raise
+
+
+@mcp.tool("stock_data_mcp_get_weekly_bars_range")
+async def impl_stock_data_mcp_get_weekly_bars_range(params: Dict[str, Any]) -> Any:
+    """
+    获取指定时间区间的周线数据（MCP 工具）
+    """
+    try:
+        start_time_value = datetime.datetime.fromisoformat(params["start_time"].replace("Z", "+00:00"))
+        end_time_value = datetime.datetime.fromisoformat(params["end_time"].replace("Z", "+00:00"))
+
+        return await get_bars_range(
+            time_level="weekly",
+            stock_code=params["stock_code"],
+            start_time=start_time_value,
+            end_time=end_time_value
+        )
+    except Exception as e:
+        logger.error(f"获取周线区间数据失败: {e}", exc_info=True)
+        raise
+
+
+@mcp.tool("stock_data_mcp_get_monthly_bars_range")
+async def impl_stock_data_mcp_get_monthly_bars_range(params: Dict[str, Any]) -> Any:
+    """
+    获取指定时间区间的月线数据（MCP 工具）
+    """
+    try:
+        start_time_value = datetime.datetime.fromisoformat(params["start_time"].replace("Z", "+00:00"))
+        end_time_value = datetime.datetime.fromisoformat(params["end_time"].replace("Z", "+00:00"))
+
+        return await get_bars_range(
+            time_level="monthly",
+            stock_code=params["stock_code"],
+            start_time=start_time_value,
+            end_time=end_time_value
+        )
+    except Exception as e:
+        logger.error(f"获取月线区间数据失败: {e}", exc_info=True)
+        raise
+
+# ================================ 日/周/月线专用 MCP 工具 END ================================
 
 
 # 错误处理
