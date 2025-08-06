@@ -299,16 +299,18 @@ async def impl_stock_data_mcp_get_bars_range(params: Dict[str, Any]) -> Any:
         raise
 
 
-# ================================ 日/周/月线专用 MCP 工具 ================================
-
 @mcp.tool("stock_data_mcp_get_latest_daily_bars")
 async def impl_stock_data_mcp_get_latest_daily_bars(params: Dict[str, Any]) -> Any:
     """
     获取最新日线数据（MCP 工具）
+
     参数:
         stock_code: 股票代码，例如 "sz002353"
         end_time: 结束时间，ISO 格式字符串，可选
         limit: 返回记录数量，默认 10
+
+    返回:
+        dict: 查询结果，包含数据列表、记录数、时间级别和股票代码
     """
     try:
         end_time_value = None
@@ -330,6 +332,14 @@ async def impl_stock_data_mcp_get_latest_daily_bars(params: Dict[str, Any]) -> A
 async def impl_stock_data_mcp_get_latest_weekly_bars(params: Dict[str, Any]) -> Any:
     """
     获取最新周线数据（MCP 工具）
+
+    参数:
+        stock_code: 股票代码，例如 "sz002353"
+        end_time: 结束时间，ISO 格式字符串，可选
+        limit: 返回记录数量，默认 10
+
+    返回:
+        dict: 查询结果，包含数据列表、记录数、时间级别和股票代码
     """
     try:
         end_time_value = None
@@ -351,6 +361,14 @@ async def impl_stock_data_mcp_get_latest_weekly_bars(params: Dict[str, Any]) -> 
 async def impl_stock_data_mcp_get_latest_monthly_bars(params: Dict[str, Any]) -> Any:
     """
     获取最新月线数据（MCP 工具）
+
+    参数:
+        stock_code: 股票代码，例如 "sz002353"
+        end_time: 结束时间，ISO 格式字符串，可选
+        limit: 返回记录数量，默认 10
+
+    返回:
+        dict: 查询结果，包含数据列表、记录数、时间级别和股票代码
     """
     try:
         end_time_value = None
@@ -372,6 +390,14 @@ async def impl_stock_data_mcp_get_latest_monthly_bars(params: Dict[str, Any]) ->
 async def impl_stock_data_mcp_get_daily_bars_range(params: Dict[str, Any]) -> Any:
     """
     获取指定时间区间的日线数据（MCP 工具）
+
+    参数:
+        stock_code: 股票代码，例如 "sz002353"
+        start_time: 起始时间，ISO 格式字符串
+        end_time: 结束时间，ISO 格式字符串
+
+    返回:
+        dict: 查询结果，包含数据列表、记录数、时间级别和股票代码
     """
     try:
         start_time_value = datetime.datetime.fromisoformat(params["start_time"].replace("Z", "+00:00"))
@@ -392,6 +418,14 @@ async def impl_stock_data_mcp_get_daily_bars_range(params: Dict[str, Any]) -> An
 async def impl_stock_data_mcp_get_weekly_bars_range(params: Dict[str, Any]) -> Any:
     """
     获取指定时间区间的周线数据（MCP 工具）
+
+    参数:
+        stock_code: 股票代码，例如 "sz002353"
+        start_time: 起始时间，ISO 格式字符串
+        end_time: 结束时间，ISO 格式字符串
+
+    返回:
+        dict: 查询结果，包含数据列表、记录数、时间级别和股票代码
     """
     try:
         start_time_value = datetime.datetime.fromisoformat(params["start_time"].replace("Z", "+00:00"))
@@ -412,6 +446,14 @@ async def impl_stock_data_mcp_get_weekly_bars_range(params: Dict[str, Any]) -> A
 async def impl_stock_data_mcp_get_monthly_bars_range(params: Dict[str, Any]) -> Any:
     """
     获取指定时间区间的月线数据（MCP 工具）
+
+    参数:
+        stock_code: 股票代码，例如 "sz002353"
+        start_time: 起始时间，ISO 格式字符串
+        end_time: 结束时间，ISO 格式字符串
+
+    返回:
+        dict: 查询结果，包含数据列表、记录数、时间级别和股票代码
     """
     try:
         start_time_value = datetime.datetime.fromisoformat(params["start_time"].replace("Z", "+00:00"))
