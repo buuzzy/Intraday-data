@@ -16,6 +16,8 @@ from supabase import create_client, Client
 from sse_starlette.sse import EventSourceResponse
 from mcp.server.fastmcp import FastMCP
 from mcp.server.sse import SseServerTransport
+from starlette.applications import Starlette
+from starlette.routing import Mount, Route
 
 # 配置日志
 logging.basicConfig(stream=sys.stderr, level=logging.INFO,
@@ -174,265 +176,59 @@ async def get_latest_bars(
         "stock_code": stock_code
     }
 
-# @app.get("/api/bars_range/{time_level}/{stock_code}", response_model=StockBarResponse, summary="查询时间区间数据")
-# async def get_bars_range(
-#     time_level: str = Path(..., description="时间级别，可选值为15min, 30min, 60min"),
-#     stock_code: str = Path(..., description="股票代码，例如sz002353"),
-#     start_time: datetime.datetime = Query(..., description="开始时间，格式为YYYY-MM-DDTHH:MM:SS"),
-#     end_time: datetime.datetime = Query(..., description="结束时间，格式为YYYY-MM-DDTHH:MM:SS")
-# ):
-#     """
-#     查询特定股票在给定时间区间内的分时数据
-#     
-#     - **time_level**: 时间级别，可选值为15min, 30min, 60min
-#     - **stock_code**: 股票代码，例如sz002353
-#     - **start_time**: 开始时间，格式为YYYY-MM-DDTHH:MM:SS
-#     - **end_time**: 结束时间，格式为YYYY-MM-DDTHH:MM:SS
-#     """
-#     # 验证时间级别
-#     if time_level not in TABLE_MAPPING:
-#         raise HTTPException(status_code=400, detail=f"无效的时间级别: {time_level}，可选值为: {', '.join(TABLE_MAPPING.keys())}")
-#     
-#     # 验证时间范围
-#     if start_time >= end_time:
-#         raise HTTPException(status_code=400, detail="开始时间必须早于结束时间")
-#     
-#     table_name = TABLE_MAPPING[time_level]
-#     
-#     # 构建查询
-#     query = supabase.table(table_name)\
-#         .select("*")\
-#         .eq("stock_code", stock_code)\
-#         .gte("time", start_time.isoformat())\
-#         .lte("time", end_time.isoformat())\
-#         .order("time")
-#     
-#     response = query.execute()
-#     
-#     if not response.data:
-#         raise HTTPException(
-#             status_code=404, 
-#             detail=f"未找到股票 {stock_code} 在 {time_level} 级别从 {start_time} 到 {end_time} 的数据"
-#         )
-#     
-#     # 格式化数据
-#     formatted_data = format_stock_data(response.data)
-#     
-#     return {
-#         "data": formatted_data,
-#         "count": len(formatted_data),
-#         "time_level": time_level,
-#         "stock_code": stock_code
-#     }
+# --- MCP over SSE Integration ---
 
-# 初始化MCP实例
-mcp = FastMCP("股票分时数据查询工具", description="提供股票分时数据查询和 SSE 流式推送的 MCP 服务")
+def create_sse_server(mcp: FastMCP):
+    """Create a Starlette app that handles SSE connections and message handling"""
+    transport = SseServerTransport("/messages/")
 
-# 挂载MCP到FastAPI应用
-# 删除这一行
-# mcp.mount_to_app(app, "/mcp")
+    async def handle_sse(request: Request):
+        async with transport.connect_sse(
+            request.scope, request.receive, request._send
+        ) as streams:
+            await mcp._mcp_server.run(
+                streams[0], streams[1], mcp._mcp_server.create_initialization_options()
+            )
 
-# 新增（或替换为）
-app.mount("/mcp", mcp.sse_app())
+    routes = [
+        Route("/sse", endpoint=handle_sse),
+        Mount("/messages/", app=transport.handle_post_message),
+    ]
 
-# 实现MCP工具的实际处理逻辑
-@mcp.tool("stock_data_mcp_get_latest_bars")
-async def impl_stock_data_mcp_get_latest_bars(params: Dict[str, Any]) -> Any:
-    """
-    获取最新的分时数据（MCP 工具）
+    return Starlette(routes=routes)
 
-    参数:
-        time_level: 分钟级别，如 "60min"
-        stock_code: 股票代码，例如 "sz002353"
-        end_time: 结束时间，ISO 格式字符串，可选
-        limit: 返回记录数量，默认 10
+# Initialize FastMCP
+mcp = FastMCP(
+    name="Intraday Data MCP Server",
+    description="MCP server for querying intraday stock data."
+)
 
-    返回:
-        dict: 查询结果，包含数据列表、记录数、时间级别和股票代码
-    """
+# Define MCP tools by wrapping existing API functions
+@mcp.tool(
+    name="get_latest_bars",
+    description="Get the latest N bars for a stock at a specific time level."
+)
+async def mcp_get_latest_bars(
+    time_level: str = Query(..., description="Time level: 60min, daily, weekly"),
+    stock_code: str = Query(..., description="Stock code, e.g., sz002353"),
+    end_time: Optional[datetime.datetime] = Query(None, description="End time (YYYY-MM-DDTHH:MM:SS)"),
+    limit: int = Query(10, description="Number of records to return, default is 10")
+) -> Dict[str, Any]:
+    """MCP tool to fetch latest stock bars."""
     try:
-        end_time_value = None
-        if params.get("end_time"):
-            end_time_value = datetime.datetime.fromisoformat(params["end_time"].replace("Z", "+00:00"))
-
-        result = await get_latest_bars(
-            time_level=params["time_level"],
-            stock_code=params["stock_code"],
-            end_time=end_time_value,
-            limit=params.get("limit", 10)
-        )
-        return result
+        response = await get_latest_bars(time_level, stock_code, end_time, limit)
+        # The function already returns a dictionary that can be serialized
+        return response
+    except HTTPException as e:
+        return {"error": e.detail, "status_code": e.status_code}
     except Exception as e:
-        logger.error(f"获取最新分时数据失败: {e}", exc_info=True)
-        raise
+        return {"error": str(e), "status_code": 500}
 
-# @mcp.tool("stock_data_mcp_get_bars_range")
-# async def impl_stock_data_mcp_get_bars_range(params: Dict[str, Any]) -> Any:
-#     """
-#     获取指定时间区间的分时数据（MCP 工具）
-#
-#     参数:
-#         time_level: 分钟级别，如 "15min"、"30min"、"60min"
-#         stock_code: 股票代码，例如 "sz002353"
-#         start_time: 起始时间，ISO 格式字符串
-#         end_time: 结束时间，ISO 格式字符串
-#
-#     返回:
-#         dict: 查询结果，包含数据列表、记录数、时间级别和股票代码
-#     """
-#     try:
-#         start_time_value = datetime.datetime.fromisoformat(params["start_time"].replace("Z", "+00:00"))
-#         end_time_value = datetime.datetime.fromisoformat(params["end_time"].replace("Z", "+00:00"))
-#
-#         result = await get_bars_range(
-#             time_level=params["time_level"],
-#             stock_code=params["stock_code"],
-#             start_time=start_time_value,
-#             end_time=end_time_value
-#         )
-#         return result
-#     except Exception as e:
-#         logger.error(f"获取时间区间分时数据失败: {e}", exc_info=True)
-#         raise
+# Mount the SSE server onto the FastAPI app
+# This should be mounted at a path that doesn't conflict with your API, e.g., /mcp
+app.mount("/mcp", create_sse_server(mcp))
 
-
-@mcp.tool("stock_data_mcp_get_latest_daily_bars")
-async def impl_stock_data_mcp_get_latest_daily_bars(params: Dict[str, Any]) -> Any:
-    """
-    获取最新日线数据（MCP 工具）
-
-    参数:
-        stock_code: 股票代码，例如 "sz002353"
-        end_time: 结束时间，ISO 格式字符串，可选
-        limit: 返回记录数量，默认 10
-
-    返回:
-        dict: 查询结果，包含数据列表、记录数、时间级别和股票代码
-    """
-    try:
-        end_time_value = None
-        if params.get("end_time"):
-            end_time_value = datetime.datetime.fromisoformat(params["end_time"].replace("Z", "+00:00"))
-
-        return await get_latest_bars(
-            time_level="daily",
-            stock_code=params["stock_code"],
-            end_time=end_time_value,
-            limit=params.get("limit", 10)
-        )
-    except Exception as e:
-        logger.error(f"获取最新日线数据失败: {e}", exc_info=True)
-        raise
-
-
-@mcp.tool("stock_data_mcp_get_latest_weekly_bars")
-async def impl_stock_data_mcp_get_latest_weekly_bars(params: Dict[str, Any]) -> Any:
-    """
-    获取最新周线数据（MCP 工具）
-
-    参数:
-        stock_code: 股票代码，例如 "sz002353"
-        end_time: 结束时间，ISO 格式字符串，可选
-        limit: 返回记录数量，默认 10
-
-    返回:
-        dict: 查询结果，包含数据列表、记录数、时间级别和股票代码
-    """
-    try:
-        end_time_value = None
-        if params.get("end_time"):
-            end_time_value = datetime.datetime.fromisoformat(params["end_time"].replace("Z", "+00:00"))
-
-        return await get_latest_bars(
-            time_level="weekly",
-            stock_code=params["stock_code"],
-            end_time=end_time_value,
-            limit=params.get("limit", 10)
-        )
-    except Exception as e:
-        logger.error(f"获取最新周线数据失败: {e}", exc_info=True)
-        raise
-
-
-# @mcp.tool("stock_data_mcp_get_latest_monthly_bars")
-# async def impl_stock_data_mcp_get_latest_monthly_bars(params: Dict[str, Any]) -> Any:
-#     """
-#     获取最新月线数据（MCP 工具）
-#
-#     参数:
-#         stock_code: 股票代码，例如 "sz002353"
-#         end_time: 结束时间，ISO 格式字符串，可选
-#         limit: 返回记录数量，默认 10
-#
-#     返回:
-#         dict: 查询结果，包含数据列表、记录数、时间级别和股票代码
-#     """
-#     try:
-#         end_time_value = None
-#         if params.get("end_time"):
-#             end_time_value = datetime.datetime.fromisoformat(params["end_time"].replace("Z", "+00:00"))
-#
-#         return await get_latest_bars(
-#             time_level="monthly",
-#             stock_code=params["stock_code"],
-#             end_time=end_time_value,
-#             limit=params.get("limit", 10)
-#         )
-#     except Exception as e:
-#         logger.error(f"获取最新月线数据失败: {e}", exc_info=True)
-#         raise
-
-
-# @mcp.tool("stock_data_mcp_get_daily_bars_range")
-# async def impl_stock_data_mcp_get_daily_bars_range(params: Dict[str, Any]) -> Any:
-#     """
-#     获取指定时间区间的日线数据（MCP 工具）
-#
-#     参数:
-#         stock_code: 股票代码，例如 "sz002353"
-#         start_time: 起始时间，ISO 格式字符串
-#         end_time: 结束时间，ISO 格式字符串
-#
-#     返回:
-#         dict: 查询结果，包含数据列表、记录数、时间级别和股票代码
-#     """
-#     try:
-#         start_time_value = datetime.datetime.fromisoformat(params["start_time"].replace("Z", "+00:00"))
-#         end_time_value = datetime.datetime.fromisoformat(params["end_time"].replace("Z", "+00:00"))
-#
-#         return await get_bars_range(
-#             time_level="daily",
-#             stock_code=params["stock_code"],
-#             start_time=start_time_value,
-#             end_time=end_time_value
-#         )
-#     except Exception as e:
-#         logger.error(f"获取日线区间数据失败: {e}", exc_info=True)
-#         raise
-
-
-# @mcp.tool("stock_data_mcp_get_weekly_bars_range")
-# async def impl_stock_data_mcp_get_weekly_bars_range(params: Dict[str, Any]) -> Any:
-#     """
-#     获取指定时间区间的周线数据（MCP 工具）
-#
-#     参数:
-#         stock_code: 股票代码，例如 "sz002353"
-#         start_time: 起始时间，ISO 格式字符串
-#         end_time: 结束时间，ISO 格式字符串
-#
-#     返回:
-#         dict: 查询结果，包含数据列表、记录数、时间级别和股票代码
-#     """
-#     try:
-#         start_time_value = datetime.datetime.fromisoformat(params["start_time"].replace("Z", "+00:00"))
-#         end_time_value = datetime.datetime.fromisoformat(params["end_time"].replace("Z", "+00:00"))
-#
-#         return await get_bars_range(
-#             time_level="weekly",
-#             stock_code=params["stock_code"],
-#             start_time=start_time_value,
-#             end_time=end_time_value
-#         )
-#     except Exception as e:
-#         logger.error(f"获取
+# 运行 FastAPI 应用 (for local development)
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
