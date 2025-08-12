@@ -225,8 +225,7 @@ async def mcp_get_latest_bars(
         return {"error": str(e), "status_code": 500}
 
 # Mount the SSE server onto the FastAPI app
-# This should be mounted at a path that doesn't conflict with your API, e.g., /mcp
-app.mount("/mcp", create_sse_server(mcp))
+app.mount("/sse", create_sse_server(mcp))
 
 # 运行 FastAPI 应用 (for local development)
 if __name__ == "__main__":
