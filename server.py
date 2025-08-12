@@ -191,7 +191,7 @@ def create_sse_server(mcp: FastMCP):
             )
 
     routes = [
-        Route("/sse", endpoint=handle_sse),
+        Route("/", endpoint=handle_sse),
         Mount("/messages/", app=transport.handle_post_message),
     ]
 
