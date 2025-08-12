@@ -180,7 +180,8 @@ async def get_latest_bars(
 
 def create_sse_server(mcp: FastMCP):
     """Create a Starlette app that handles SSE connections and message handling"""
-    transport = SseServerTransport("/messages/")
+    # The transport needs to know the absolute path for POST messages
+    transport = SseServerTransport("/sse/messages/")
 
     async def handle_sse(request: Request):
         async with transport.connect_sse(
