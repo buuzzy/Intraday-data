@@ -1,23 +1,14 @@
 import os
 import sys
 import datetime
-import json
-import asyncio
 import logging
-from typing import Optional, List, Dict, Any, AsyncGenerator
-from fastapi import FastAPI, HTTPException, Query, Path, Request, Depends
-from fastapi.responses import JSONResponse, Response
+from typing import Optional, List, Dict, Any
+from fastapi import FastAPI, HTTPException, Query, Path
 from fastapi.middleware.cors import CORSMiddleware
-from starlette.middleware.base import BaseHTTPMiddleware
-from pydantic import BaseModel, Field
-import pytz
+from pydantic import BaseModel
 from dotenv import load_dotenv
 from supabase import create_client, Client
-from sse_starlette.sse import EventSourceResponse
 from mcp.server.fastmcp import FastMCP
-from mcp.server.sse import SseServerTransport
-from starlette.applications import Starlette
-from starlette.routing import Mount, Route
 
 # 配置日志
 logging.basicConfig(stream=sys.stderr, level=logging.INFO,
@@ -87,33 +78,24 @@ class StockBar(BaseModel):
     close: float
 
 # 辅助函数
-def format_stock_data(rows: List[Dict[str, Any]], calculate_change: bool = True) -> List[Dict[str, Any]]:
+def format_stock_data(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
-    格式化股票数据，计算涨跌幅
+    格式化股票数据，返回 OHLC 四个价格
     """
-    formatted_data = []
-    
     # 按时间排序
     sorted_rows = sorted(rows, key=lambda x: x['time'])
-    
-    for i, row in enumerate(sorted_rows):
-        data_item = {
+
+    formatted_data = []
+    for row in sorted_rows:
+        formatted_data.append({
             "time": row["time"],
             "stock_code": row["stock_code"],
             "open": row["open"],
-            "close": row["close"],
             "high": row["high"],
-            "low": row["low"]
-        }
-        
-        # 计算涨跌幅
-        if calculate_change and i > 0:
-            prev_close = sorted_rows[i-1]["close"]
-            data_item["change"] = round(row["close"] - prev_close, 2)
-            data_item["change_percent"] = round((row["close"] - prev_close) / prev_close * 100, 2)
-        
-        formatted_data.append(data_item)
-    
+            "low": row["low"],
+            "close": row["close"]
+        })
+
     return formatted_data
 
 # API端点
@@ -121,16 +103,16 @@ def format_stock_data(rows: List[Dict[str, Any]], calculate_change: bool = True)
 async def root():
     return {"message": "股票分时数据查询API服务正在运行"}
 
-@app.get("/api/latest_bars/{time_level}/{stock_code}", response_model=StockBarResponse, summary="查询最新X条数据")
+@app.get("/api/latest_bars/{time_level}/{stock_code}", summary="查询最新X条数据")
 async def get_latest_bars(
     time_level: str = Path(..., description="时间级别，可选值为60min, daily, weekly"),
     stock_code: str = Path(..., description="股票代码，例如sz002353"),
     end_time: Optional[datetime.datetime] = Query(None, description="结束时间，格式为YYYY-MM-DDTHH:MM:SS"),
     limit: int = Query(10, description="返回的记录数量，默认为10")
-):
+) -> List[StockBar]:
     """
     查询特定股票在给定结束时间前推X条分时数据
-    
+
     - **time_level**: 时间级别，可选值为60min, daily, weekly
     - **stock_code**: 股票代码，例如sz002353
     - **end_time**: 结束时间（可选），格式为YYYY-MM-DDTHH:MM:SS
@@ -139,56 +121,28 @@ async def get_latest_bars(
     # 验证时间级别
     if time_level not in TABLE_MAPPING:
         raise HTTPException(status_code=400, detail=f"无效的时间级别: {time_level}，可选值为: {', '.join(TABLE_MAPPING.keys())}")
-    
+
     table_name = TABLE_MAPPING[time_level]
     query = supabase.table(table_name).select("*").eq("stock_code", stock_code)
-    
+
     # 如果指定了结束时间，则添加时间过滤条件
     if end_time:
         query = query.lte("time", end_time.isoformat())
-    
+
     # 按时间倒序排列并限制结果数量
     query = query.order("time", desc=True).limit(limit)
-    
+
     response = query.execute()
-    
+
     if not response.data:
         raise HTTPException(status_code=404, detail=f"未找到股票 {stock_code} 在 {time_level} 级别的数据")
-    
-    # 按时间正序排列，以便计算涨跌幅
-    data = sorted(response.data, key=lambda x: x['time'])
-    
-    # 格式化数据
-    formatted_data = format_stock_data(data)
-    
-    return {
-        "data": formatted_data,
-        "count": len(formatted_data),
-        "time_level": time_level,
-        "stock_code": stock_code
-    }
+
+    # 格式化数据并直接返回列表
+    formatted_data = format_stock_data(response.data)
+
+    return formatted_data
 
 # --- MCP over SSE Integration ---
-
-def create_sse_server(mcp: FastMCP):
-    """Create a Starlette app that handles SSE connections and message handling"""
-    # The transport needs to know the absolute path for POST messages
-    transport = SseServerTransport("/sse/messages/")
-
-    async def handle_sse(request: Request):
-        async with transport.connect_sse(
-            request.scope, request.receive, request._send
-        ) as streams:
-            await mcp._mcp_server.run(
-                streams[0], streams[1], mcp._mcp_server.create_initialization_options()
-            )
-
-    routes = [
-        Route("/", endpoint=handle_sse),
-        Mount("/messages/", app=transport.handle_post_message),
-    ]
-
-    return Starlette(routes=routes)
 
 # Initialize FastMCP
 mcp = FastMCP(
@@ -199,26 +153,44 @@ mcp = FastMCP(
 # Define MCP tools by wrapping existing API functions
 @mcp.tool(
     name="get_latest_bars",
-    description="Get the latest N bars for a stock at a specific time level."
+    description="Get the latest N bars for a stock at a specific time level. Returns list of OHLC data."
 )
 async def mcp_get_latest_bars(
-    time_level: str = Query(..., description="Time level: 60min, daily, weekly"),
-    stock_code: str = Query(..., description="Stock code, e.g., sz002353"),
-    end_time: Optional[datetime.datetime] = Query(None, description="End time (YYYY-MM-DDTHH:MM:SS)"),
-    limit: int = Query(10, description="Number of records to return, default is 10")
-) -> Dict[str, Any]:
-    """MCP tool to fetch latest stock bars."""
-    try:
-        response = await get_latest_bars(time_level, stock_code, end_time, limit)
-        # The function already returns a dictionary that can be serialized
-        return response
-    except HTTPException as e:
-        return {"error": e.detail, "status_code": e.status_code}
-    except Exception as e:
-        return {"error": str(e), "status_code": 500}
+    time_level: str,
+    stock_code: str,
+    end_time: Optional[str] = None,
+    limit: int = 10
+) -> List[Dict[str, Any]]:
+    """MCP tool to fetch latest stock bars.
 
-# Mount the SSE server onto the FastAPI app
-app.mount("/sse", create_sse_server(mcp))
+    Args:
+        time_level: Time level (60min, daily, weekly)
+        stock_code: Stock code (e.g., sz002353)
+        end_time: Optional end time in ISO format (YYYY-MM-DDTHH:MM:SS)
+        limit: Number of records to return (default 10)
+
+    Returns:
+        List of stock bars with time, stock_code, open, high, low, close
+    """
+    try:
+        # 转换 end_time 字符串为 datetime 对象
+        end_time_dt = None
+        if end_time:
+            end_time_dt = datetime.datetime.fromisoformat(end_time)
+
+        bars = await get_latest_bars(time_level, stock_code, end_time_dt, limit)
+
+        # 将 Pydantic 模型转换为字典列表
+        return [bar.model_dump() if hasattr(bar, 'model_dump') else bar for bar in bars]
+    except HTTPException as e:
+        logger.error(f"MCP tool error: {e.detail}")
+        raise
+    except Exception as e:
+        logger.error(f"MCP tool unexpected error: {str(e)}")
+        raise
+
+# Mount the MCP SSE server onto the FastAPI app
+app.mount("/sse", mcp.sse_app())
 
 # 运行 FastAPI 应用 (for local development)
 if __name__ == "__main__":
