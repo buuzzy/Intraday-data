@@ -82,17 +82,9 @@ class StockBar(BaseModel):
     time: datetime.datetime
     stock_code: str
     open: float
-    close: float
     high: float
     low: float
-    change: Optional[float] = None
-    change_percent: Optional[float] = None
-
-class StockBarResponse(BaseModel):
-    data: List[StockBar]
-    count: int
-    time_level: str
-    stock_code: str
+    close: float
 
 # 辅助函数
 def format_stock_data(rows: List[Dict[str, Any]], calculate_change: bool = True) -> List[Dict[str, Any]]:
