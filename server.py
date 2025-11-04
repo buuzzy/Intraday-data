@@ -9,6 +9,8 @@ from pydantic import BaseModel
 from dotenv import load_dotenv
 from supabase import create_client, Client
 from mcp.server.fastmcp import FastMCP
+from starlette.requests import Request
+from mcp.server.sse import SseServerTransport
 
 # 配置日志
 logging.basicConfig(stream=sys.stderr, level=logging.INFO,
@@ -188,6 +190,18 @@ mcp = FastMCP(
     description="MCP server for querying intraday stock data."
 )
 
+@mcp.prompt()
+def usage_guide() -> str:
+    """Provide a usage guide for the MCP tool."""
+    return """Welcome to the Intraday Data MCP Server!
+
+Usage:
+- Use the `get_latest_bars` tool to fetch stock data.
+
+Example:
+> get_latest_bars(time_level="daily", stock_code="sz002353", limit=5)
+"""
+
 # Define MCP tools by wrapping existing API functions
 @mcp.tool(
     name="get_latest_bars",
@@ -225,8 +239,32 @@ async def mcp_get_latest_bars(
         logger.error(f"MCP tool unexpected error: {str(e)}", exc_info=True)
         raise
 
-# Mount the MCP SSE server onto the FastAPI app
-app.mount("/sse", mcp.sse_app())
+# Mount the MCP SSE server onto the FastAPI app - REVISED IMPLEMENTATION
+MCP_BASE_PATH = "/sse"
+try:
+    messages_full_path = f"{MCP_BASE_PATH}/messages/"
+    sse_transport = SseServerTransport(messages_full_path)
+
+    async def handle_mcp_sse_handshake(request: Request) -> None:
+        """Handle the MCP SSE handshake."""
+        async with sse_transport.connect_sse(
+            request.scope, request.receive, request._send
+        ) as (read_stream, write_stream):
+            await mcp._mcp_server.run(
+                read_stream,
+                write_stream,
+                mcp._mcp_server.create_initialization_options(),
+            )
+
+    # Register the routes
+    app.add_route(MCP_BASE_PATH, handle_mcp_sse_handshake, methods=["GET"])
+    app.mount(messages_full_path, sse_transport.handle_post_message)
+    logger.info("MCP SSE integration configured successfully.")
+
+except Exception as e:
+    logger.critical(f"Failed to set up MCP SSE integration: {e}", exc_info=True)
+    sys.exit(1)
+
 
 # 运行 FastAPI 应用 (for local development)
 if __name__ == "__main__":
