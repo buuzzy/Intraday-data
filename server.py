@@ -78,6 +78,28 @@ class StockBar(BaseModel):
     close: float
 
 # 辅助函数
+def parse_end_time(end_time_str: Optional[str]) -> Optional[datetime.datetime]:
+    """
+    解析 ISO 格式的时间字符串为 datetime 对象
+
+    Args:
+        end_time_str: ISO 格式的时间字符串 (YYYY-MM-DDTHH:MM:SS)
+
+    Returns:
+        datetime 对象，如果输入为 None 则返回 None
+
+    Raises:
+        ValueError: 如果时间字符串格式不正确
+    """
+    if not end_time_str:
+        return None
+
+    try:
+        return datetime.datetime.fromisoformat(end_time_str)
+    except ValueError as e:
+        logger.error(f"时间格式解析失败: {end_time_str}, error={str(e)}")
+        raise ValueError(f"无效的时间格式: {end_time_str}，期望格式为 YYYY-MM-DDTHH:MM:SS")
+
 def format_stock_data(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
     格式化股票数据，返回 OHLC 四个价格
@@ -118,29 +140,45 @@ async def get_latest_bars(
     - **end_time**: 结束时间（可选），格式为YYYY-MM-DDTHH:MM:SS
     - **limit**: 返回的记录数量（可选），默认为10
     """
+    logger.info(f"查询请求: time_level={time_level}, stock_code={stock_code}, end_time={end_time}, limit={limit}")
+
     # 验证时间级别
     if time_level not in TABLE_MAPPING:
+        logger.warning(f"无效的时间级别: {time_level}")
         raise HTTPException(status_code=400, detail=f"无效的时间级别: {time_level}，可选值为: {', '.join(TABLE_MAPPING.keys())}")
 
     table_name = TABLE_MAPPING[time_level]
-    query = supabase.table(table_name).select("*").eq("stock_code", stock_code)
+    logger.debug(f"使用表: {table_name}")
 
-    # 如果指定了结束时间，则添加时间过滤条件
-    if end_time:
-        query = query.lte("time", end_time.isoformat())
+    try:
+        query = supabase.table(table_name).select("*").eq("stock_code", stock_code)
 
-    # 按时间倒序排列并限制结果数量
-    query = query.order("time", desc=True).limit(limit)
+        # 如果指定了结束时间，则添加时间过滤条件
+        if end_time:
+            query = query.lte("time", end_time.isoformat())
 
-    response = query.execute()
+        # 按时间倒序排列并限制结果数量
+        query = query.order("time", desc=True).limit(limit)
+
+        response = query.execute()
+        logger.debug(f"Supabase 查询成功，返回 {len(response.data) if response.data else 0} 条记录")
+
+    except Exception as e:
+        logger.error(f"Supabase 查询失败: table={table_name}, stock_code={stock_code}, error={str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"数据库查询失败: {str(e)}")
 
     if not response.data:
+        logger.warning(f"未找到数据: stock_code={stock_code}, time_level={time_level}")
         raise HTTPException(status_code=404, detail=f"未找到股票 {stock_code} 在 {time_level} 级别的数据")
 
     # 格式化数据并直接返回列表
-    formatted_data = format_stock_data(response.data)
-
-    return formatted_data
+    try:
+        formatted_data = format_stock_data(response.data)
+        logger.info(f"成功返回 {len(formatted_data)} 条格式化数据")
+        return formatted_data
+    except Exception as e:
+        logger.error(f"数据格式化失败: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"数据处理失败: {str(e)}")
 
 # --- MCP over SSE Integration ---
 
@@ -160,7 +198,7 @@ async def mcp_get_latest_bars(
     stock_code: str,
     end_time: Optional[str] = None,
     limit: int = 10
-) -> List[Dict[str, Any]]:
+) -> List[StockBar]:
     """MCP tool to fetch latest stock bars.
 
     Args:
@@ -173,20 +211,18 @@ async def mcp_get_latest_bars(
         List of stock bars with time, stock_code, open, high, low, close
     """
     try:
-        # 转换 end_time 字符串为 datetime 对象
-        end_time_dt = None
-        if end_time:
-            end_time_dt = datetime.datetime.fromisoformat(end_time)
-
-        bars = await get_latest_bars(time_level, stock_code, end_time_dt, limit)
-
-        # 将 Pydantic 模型转换为字典列表
-        return [bar.model_dump() if hasattr(bar, 'model_dump') else bar for bar in bars]
+        # 使用统一的时间解析函数
+        end_time_dt = parse_end_time(end_time)
+        return await get_latest_bars(time_level, stock_code, end_time_dt, limit)
+    except ValueError as e:
+        # 时间格式错误
+        logger.error(f"MCP tool 参数错误: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
     except HTTPException as e:
         logger.error(f"MCP tool error: {e.detail}")
         raise
     except Exception as e:
-        logger.error(f"MCP tool unexpected error: {str(e)}")
+        logger.error(f"MCP tool unexpected error: {str(e)}", exc_info=True)
         raise
 
 # Mount the MCP SSE server onto the FastAPI app
