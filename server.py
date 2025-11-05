@@ -55,8 +55,6 @@ else:
     try:
         logger.info("正在初始化 Tushare Pro API...")
         tushare_pro_api = ts.pro_api(tushare_token)
-        # 验证 token
-        test_df = tushare_pro_api.stock_basic(limit=1)
         if test_df.empty:
             logger.warning("Tushare token 已设置，但验证失败 (stock_basic 返回为空)。")
         else:
