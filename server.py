@@ -46,7 +46,9 @@ else:
 # --- 4. 初始化 Tushare 客户端 ---
 logger.info("正在检查 Tushare 环境变量...")
 tushare_token = os.environ.get("TUSHARE_TOKEN")
-tushare_pro_api: Optional[ts.ProApi] = None
+
+# 【修复 2】移除了错误的 'ts.ProApi' 类型提示
+tushare_pro_api = None 
 
 if not tushare_token:
     logger.warning("TUSHARE_TOKEN 环境变量未设置。Tushare 相关工具 (如 search_stocks) 将不可用。")
@@ -56,7 +58,7 @@ else:
         logger.info("正在初始化 Tushare Pro API...")
         tushare_pro_api = ts.pro_api(tushare_token)
         
-        # 【修复】执行测试查询以定义 test_df，并验证 token
+        # 【修复 1】执行测试查询以定义 test_df，并验证 token
         logger.info("正在验证 Tushare token (执行测试查询)...")
         test_df = tushare_pro_api.stock_basic(limit=1) 
         
@@ -175,7 +177,7 @@ async def get_latest_bars(
 
     if not response.data:
         logger.warning(f"未找到数据: stock_code={stock_code}, time_level={time_level}")
-        raise HTTPException(status_code=404, detail=f"未找到股票 {stock_code} 在 {time_level} 级别的数据")
+        raise HTTPException(status_code=44, detail=f"未找到股票 {stock_code} 在 {time_level} 级别的数据")
 
     try:
         formatted_data = format_stock_data(response.data)
@@ -286,7 +288,7 @@ def search_stocks(keyword: str) -> str:
                 logging.warning(f"Error searching by ts_code '{keyword}': {e}")
 
         # 3. 备选方案: 获取所有并本地过滤 (用于 '600519' 或部分名称)
-        if not df_list or len(df_list[0]) < 5:
+        if not df_list or (df_list and len(df_list[0]) < 5): # 修正了逻辑
             try:
                 # 注意：在生产环境中，获取所有股票可能非常慢
                 df_all = tushare_pro_api.stock_basic(
@@ -348,10 +350,10 @@ except Exception as e:
 
 
 # --- 10. 运行 FastAPI 应用 ---
-# 你的 Dockerfile  使用 "uvicorn server:app"，所以这个 __main__ 块在 Docker 中不会被执行
+# 你的 Dockerfile 使用 "uvicorn server:app"，所以这个 __main__ 块在 Docker 中不会被执行
 if __name__ == "__main__":
     import uvicorn
-    # Dockerfile  中指定了 $PORT 环境变量，本地运行时使用 8000
+    # Dockerfile 中指定了 $PORT 环境变量，本地运行时使用 8000
     port = int(os.environ.get("PORT", 8000))
     logger.info(f"Starting server locally on port {port}")
     uvicorn.run(app, host="0.0.0.0", port=port)
