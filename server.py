@@ -4,7 +4,7 @@ import datetime
 import logging
 from typing import Optional, List, Dict, Any
 
-import tushare as ts
+import tinyshare as ts
 import pandas as pd
 from fastapi import FastAPI, HTTPException, Query, Path
 from fastapi.middleware.cors import CORSMiddleware
@@ -43,39 +43,37 @@ else:
         logger.critical(f"初始化 Supabase 客户端时出错: {e}", exc_info=True)
         sys.exit(1)
 
-# --- 4. 初始化 Tushare 客户端 ---
-logger.info("正在检查 Tushare 环境变量...")
-tushare_token = os.environ.get("TUSHARE_TOKEN")
+# --- 4. 初始化 Tinyshare 客户端 ---
+logger.info("正在检查 Tinyshare 环境变量...")
+tinyshare_token = os.environ.get("TINYSHARE_TOKEN") or os.environ.get("TUSHARE_TOKEN")
 
-# 【修复 2】移除了错误的 'ts.ProApi' 类型提示
-tushare_pro_api = None 
+tinyshare_pro_api = None 
 
-if not tushare_token:
-    logger.warning("TUSHARE_TOKEN 环境变量未设置。Tushare 相关工具 (如 search_stocks) 将不可用。")
+if not tinyshare_token:
+    logger.warning("Tinyshare/Tushare token 环境变量未设置。Tinyshare 相关工具 (如 search_stocks) 将不可用。")
 else:
-    logger.info("Tushare 环境变量已找到。")
+    logger.info("Tinyshare 环境变量已找到。")
     try:
-        logger.info("正在初始化 Tushare Pro API...")
-        tushare_pro_api = ts.pro_api(tushare_token)
+        logger.info("正在初始化 Tinyshare Pro API...")
+        tinyshare_pro_api = ts.pro_api(tinyshare_token)
         
-        # 【修复 1】执行测试查询以定义 test_df，并验证 token
-        logger.info("正在验证 Tushare token (执行测试查询)...")
-        test_df = tushare_pro_api.stock_basic(limit=1) 
+        logger.info("正在验证 Tinyshare token (执行测试查询)...")
+        test_df = tinyshare_pro_api.stock_basic(limit=1) 
         
         if test_df.empty:
-            logger.warning("Tushare token 已设置，但验证失败 (stock_basic 返回为空)。")
-            tushare_pro_api = None # 验证失败，设为 None
+            logger.warning("Tinyshare token 已设置，但验证失败 (stock_basic 返回为空)。")
+            tinyshare_pro_api = None 
         else:
-            logger.info("Tushare Pro API 初始化并验证成功。")
+            logger.info("Tinyshare Pro API 初始化并验证成功。")
             
     except Exception as e:
-        logger.error(f"初始化 Tushare Pro API 时出错: {e}", exc_info=True)
-        tushare_pro_api = None # 出现异常，明确设为 None
+        logger.error(f"初始化 Tinyshare Pro API 时出错: {e}", exc_info=True)
+        tinyshare_pro_api = None 
 
 # --- 5. 初始化 FastAPI 应用 ---
 app = FastAPI(
-    title="股票数据查询API (Supabase + Tushare)",
-    description="提供股票分时数据查询 (Supabase) 和股票信息搜索 (Tushare) 服务",
+    title="股票数据查询API (Supabase + Tinyshare)",
+    description="提供股票分时数据查询 (Supabase) 和股票信息搜索 (Tinyshare) 服务",
     version="1.1.0"
 )
 
@@ -138,7 +136,7 @@ def format_stock_data(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 # --- 7. API 端点 (Supabase) ---
 @app.get("/")
 async def root():
-    return {"message": "股票数据查询API服务 (Supabase + Tushare) 正在运行"}
+    return {"message": "股票数据查询API服务 (Supabase + Tinyshare) 正在运行"}
 
 @app.get("/api/latest_bars/{time_level}/{stock_code}", summary="查询最新X条数据 (Supabase)")
 async def get_latest_bars(
@@ -205,7 +203,7 @@ def usage_guide() -> str:
    - 功能: 获取特定股票、特定时间级别的最新 N 条 K 线数据。
    - 示例: > get_latest_bars(time_level="daily", stock_code="sz002353", limit=5)
 
-2. search_stocks (来自 Tushare)
+2. search_stocks (来自 Tinyshare)
    - 功能: 根据关键词（代码、简称或名称）搜索股票信息。
    - 示例: > search_stocks(keyword="茅台")
    - 示例: > search_stocks(keyword="600519")
@@ -245,7 +243,7 @@ async def mcp_get_latest_bars(
 # --- MCP Tool 2 (Tushare) - 从 B 脚本中添加 ---
 @mcp.tool(
     name="search_stocks",
-    description="根据关键词（代码、简称或名称）搜索股票信息 (from Tushare)。"
+    description="根据关键词（代码、简称或名称）搜索股票信息 (from Tinyshare)。"
 )
 def search_stocks(keyword: str) -> str:
     """
@@ -256,10 +254,9 @@ def search_stocks(keyword: str) -> str:
     """
     logging.info(f"调用工具: search_stocks，参数: {{'keyword': '{keyword}'}}")
     
-    # 使用在启动时初始化的全局 tushare_pro_api 实例
-    if not tushare_pro_api:
-        logger.warning("Tushare API 未初始化 (Token缺失或无效)。")
-        return "错误：Tushare token 未在服务器上配置或初始化失败。请检查服务器 .env 文件中的 TUSHARE_TOKEN。"
+    if not tinyshare_pro_api:
+        logger.warning("Tinyshare API 未初始化 (Token缺失或无效)。")
+        return "错误：Tinyshare token 未在服务器上配置或初始化失败。请检查服务器 .env 文件中的 TINYSHARE_TOKEN 或 TUSHARE_TOKEN。"
 
     try:
         logging.info(f"Searching for stock with keyword: {keyword}")
@@ -271,7 +268,7 @@ def search_stocks(keyword: str) -> str:
 
         # 1. 尝试按名称搜索 (API 级别模糊匹配)
         try:
-            df_name = tushare_pro_api.stock_basic(name=keyword, list_status='L', fields='ts_code,symbol,name,area,industry,list_date')
+            df_name = tinyshare_pro_api.stock_basic(name=keyword, list_status='L', fields='ts_code,symbol,name,area,industry,list_date')
             if not df_name.empty:
                 df_list.append(df_name)
         except Exception as e:
@@ -281,7 +278,7 @@ def search_stocks(keyword: str) -> str:
         keyword_upper = keyword.upper()
         if ".SZ" in keyword_upper or ".SH" in keyword_upper or ".BJ" in keyword_upper:
             try:
-                df_ts_code = tushare_pro_api.stock_basic(ts_code=keyword, list_status='L', fields='ts_code,symbol,name,area,industry,list_date')
+                df_ts_code = tinyshare_pro_api.stock_basic(ts_code=keyword, list_status='L', fields='ts_code,symbol,name,area,industry,list_date')
                 if not df_ts_code.empty:
                     df_list.append(df_ts_code)
             except Exception as e:
@@ -291,7 +288,7 @@ def search_stocks(keyword: str) -> str:
         if not df_list or (df_list and len(df_list[0]) < 5): # 修正了逻辑
             try:
                 # 注意：在生产环境中，获取所有股票可能非常慢
-                df_all = tushare_pro_api.stock_basic(
+                df_all = tinyshare_pro_api.stock_basic(
                     exchange='',
                     list_status='L',
                     fields='ts_code,symbol,name,area,industry,list_date'
